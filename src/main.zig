@@ -84,13 +84,26 @@ const Snake = struct {
     pub fn move(self: *Self) Entity {
         var target = self.getHead();
 
-        // TODO: Handle cases when snake would move out of the map's
-        // boundaries and make it enter on the opposite side.
         switch (self.next_direction) {
             .UP => target.y -= 1,
             .DOWN => target.y += 1,
             .LEFT => target.x -= 1,
             .RIGHT => target.x += 1,
+        }
+
+        // If the snake leaves the map, make sure snake enters again on the
+        // opposite side of the map.
+        if (target.y < 0) {
+            target.y = @as(i32, @intCast(self.config.map.rows)) - 1;
+        }
+        if (target.y >= @as(i32, @intCast(self.config.map.rows))) {
+            target.y = 0;
+        }
+        if (target.x < 0) {
+            target.x = @as(i32, @intCast(self.config.map.cols)) - 1;
+        }
+        if (target.x >= @as(i32, @intCast(self.config.map.cols))) {
+            target.x = 0;
         }
 
         for (self.parts.items) |*part| {
@@ -255,8 +268,6 @@ pub fn main() !void {
 
     var tick: f32 = 0;
     while (game.running) {
-        tick += rl.getFrameTime();
-
         // Handle input
         if (rl.windowShouldClose() or
             rl.isKeyPressed(rl.KeyboardKey.key_q))
@@ -270,6 +281,8 @@ pub fn main() !void {
         }
 
         if (game.playing) {
+            tick += rl.getFrameTime();
+
             if (rl.isKeyPressed(rl.KeyboardKey.key_k) or rl.isKeyPressed(rl.KeyboardKey.key_up)) {
                 game.snake.setDirection(.UP);
             } else if (rl.isKeyPressed(rl.KeyboardKey.key_j) or rl.isKeyPressed(rl.KeyboardKey.key_down)) {
@@ -281,7 +294,7 @@ pub fn main() !void {
             }
 
             const tick_time = config.tick_time - (0.01 * @as(f32, @floatFromInt(game.snake.parts.items.len)));
-            if (tick >= @max(0.05, tick_time)) {
+            if (tick >= @max(0.1, tick_time)) {
                 const previous_tail = game.snake.move();
                 if (game.snake.getHead().isPosition(&game.food)) {
                     try game.snake.grow(previous_tail);
