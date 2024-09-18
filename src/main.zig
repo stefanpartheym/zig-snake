@@ -15,11 +15,15 @@ const MapTile = struct {
     type: MapTileType,
 };
 
-const SnakePart = struct {
-    pos: struct {
-        x: i32,
-        y: i32,
-    },
+const Entity = struct {
+    const Self = @This();
+
+    x: i32,
+    y: i32,
+
+    pub fn isPosition(self: *const Self, entity: *const Self) bool {
+        return self.x == entity.x and self.y == entity.y;
+    }
 };
 
 const SnakeDirection = enum {
@@ -32,19 +36,17 @@ const SnakeDirection = enum {
 const Snake = struct {
     const Self = @This();
 
-    parts: std.ArrayList(SnakePart),
-    head: *SnakePart,
+    parts: std.ArrayList(Entity),
     direction: SnakeDirection,
 
     pub fn init(allocator: std.mem.Allocator) !Self {
         var self = Self{
-            .parts = std.ArrayList(SnakePart).init(allocator),
-            .head = undefined,
+            .parts = std.ArrayList(Entity).init(allocator),
             .direction = .RIGHT,
         };
 
-        try self.parts.append(SnakePart{ .pos = .{ .x = 0, .y = 0 } });
-        self.head = &self.parts.items[self.parts.items.len - 1];
+        try self.parts.append(Entity{ .x = 1, .y = 0 });
+        try self.parts.append(Entity{ .x = 0, .y = 0 });
         self.direction = .RIGHT;
 
         return self;
@@ -69,16 +71,41 @@ const Snake = struct {
         }
     }
 
+    pub fn getHead(self: *Self) Entity {
+        return self.parts.items[0];
+    }
+
     /// Move snake in a certain direction.
-    pub fn move(self: *Self) void {
-        for (self.parts.items) |*part| {
-            switch (self.direction) {
-                .UP => part.pos.y -= 1,
-                .DOWN => part.pos.y += 1,
-                .LEFT => part.pos.x -= 1,
-                .RIGHT => part.pos.x += 1,
-            }
+    pub fn move(self: *Self) Entity {
+        var target = self.getHead();
+
+        // TODO: Handle cases when snake would move out of the map's
+        // boundaries and make it enter on the opposite side.
+        switch (self.direction) {
+            .UP => target.y -= 1,
+            .DOWN => target.y += 1,
+            .LEFT => target.x -= 1,
+            .RIGHT => target.x += 1,
         }
+
+        for (self.parts.items) |*part| {
+            const next = Entity{
+                .x = part.x,
+                .y = part.y,
+            };
+            part.x = target.x;
+            part.y = target.y;
+            target = next;
+        }
+
+        // NOTE:
+        // Return original position of the tail in order to be able to
+        // potentially grow the snake.
+        return target;
+    }
+
+    pub fn grow(self: *Self, part: Entity) !void {
+        try self.parts.append(part);
     }
 };
 
@@ -133,22 +160,36 @@ const Game = struct {
     allocator: std.mem.Allocator,
     config: *const Config,
     running: bool,
+    playing: bool,
     map: Map,
     snake: Snake,
+    food: Entity,
 
     pub fn init(allocator: std.mem.Allocator, config: *const Config) !Self {
-        return Self{
+        var self = Self{
             .allocator = allocator,
             .config = config,
             .running = true,
+            .playing = false,
             .map = try Map.init(allocator, config),
             .snake = try Snake.init(allocator),
+            .food = undefined,
         };
+
+        self.spawnFood();
+
+        return self;
     }
 
     pub fn deinit(self: *Self) void {
         self.snake.deinit();
         self.map.deinit();
+    }
+
+    pub fn spawnFood(self: *Self) void {
+        const random_x: i32 = @intCast(std.crypto.random.uintAtMost(u32, self.config.map.cols - 1));
+        const random_y: i32 = @intCast(std.crypto.random.uintAtMost(u32, self.config.map.rows - 1));
+        self.food = .{ .x = random_x, .y = random_y };
     }
 };
 
@@ -216,22 +257,30 @@ pub fn main() !void {
             game.running = false;
         }
 
-        if (rl.isKeyPressed(rl.KeyboardKey.key_k)) {
-            game.snake.setDirection(.UP);
-        }
-        if (rl.isKeyPressed(rl.KeyboardKey.key_j)) {
-            game.snake.setDirection(.DOWN);
-        }
-        if (rl.isKeyPressed(rl.KeyboardKey.key_h)) {
-            game.snake.setDirection(.LEFT);
-        }
-        if (rl.isKeyPressed(rl.KeyboardKey.key_l)) {
-            game.snake.setDirection(.RIGHT);
+        // Start/pause game.
+        if (rl.isKeyPressed(rl.KeyboardKey.key_enter)) {
+            game.playing = !game.playing;
         }
 
-        if (tick >= config.tick_time) {
-            game.snake.move();
-            tick = 0;
+        if (game.playing) {
+            if (rl.isKeyPressed(rl.KeyboardKey.key_k) or rl.isKeyPressed(rl.KeyboardKey.key_up)) {
+                game.snake.setDirection(.UP);
+            } else if (rl.isKeyPressed(rl.KeyboardKey.key_j) or rl.isKeyPressed(rl.KeyboardKey.key_down)) {
+                game.snake.setDirection(.DOWN);
+            } else if (rl.isKeyPressed(rl.KeyboardKey.key_h) or rl.isKeyPressed(rl.KeyboardKey.key_left)) {
+                game.snake.setDirection(.LEFT);
+            } else if (rl.isKeyPressed(rl.KeyboardKey.key_l) or rl.isKeyPressed(rl.KeyboardKey.key_right)) {
+                game.snake.setDirection(.RIGHT);
+            }
+
+            if (tick >= config.tick_time) {
+                const previous_tail = game.snake.move();
+                if (game.snake.getHead().isPosition(&game.food)) {
+                    try game.snake.grow(previous_tail);
+                    game.spawnFood();
+                }
+                tick = 0;
+            }
         }
 
         // Render
@@ -254,10 +303,31 @@ pub fn main() !void {
         // Snake
         for (game.snake.parts.items) |snake_part| {
             renderTile(
-                snake_part.pos.x,
-                snake_part.pos.y,
+                snake_part.x,
+                snake_part.y,
                 .{ .x = tile_width, .y = tile_height },
                 rl.Color.dark_green,
+            );
+        }
+
+        // Food
+        renderTile(
+            game.food.x,
+            game.food.y,
+            .{ .x = tile_width, .y = tile_height },
+            rl.Color.gold,
+        );
+
+        if (!game.playing) {
+            const text = "Press [ENTER] to start the game.";
+            const font_size = 24;
+            const text_size = rl.measureText(text, font_size);
+            rl.drawText(
+                text,
+                @divTrunc(config.width, 2) - @divTrunc(text_size, 2),
+                @divTrunc(config.height, 2),
+                font_size,
+                rl.Color.ray_white,
             );
         }
 
