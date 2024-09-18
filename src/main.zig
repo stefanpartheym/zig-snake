@@ -285,11 +285,14 @@ pub fn main() !void {
 
             if (rl.isKeyPressed(rl.KeyboardKey.key_k) or rl.isKeyPressed(rl.KeyboardKey.key_up)) {
                 game.snake.setDirection(.UP);
-            } else if (rl.isKeyPressed(rl.KeyboardKey.key_j) or rl.isKeyPressed(rl.KeyboardKey.key_down)) {
+            }
+            if (rl.isKeyPressed(rl.KeyboardKey.key_j) or rl.isKeyPressed(rl.KeyboardKey.key_down)) {
                 game.snake.setDirection(.DOWN);
-            } else if (rl.isKeyPressed(rl.KeyboardKey.key_h) or rl.isKeyPressed(rl.KeyboardKey.key_left)) {
+            }
+            if (rl.isKeyPressed(rl.KeyboardKey.key_h) or rl.isKeyPressed(rl.KeyboardKey.key_left)) {
                 game.snake.setDirection(.LEFT);
-            } else if (rl.isKeyPressed(rl.KeyboardKey.key_l) or rl.isKeyPressed(rl.KeyboardKey.key_right)) {
+            }
+            if (rl.isKeyPressed(rl.KeyboardKey.key_l) or rl.isKeyPressed(rl.KeyboardKey.key_right)) {
                 game.snake.setDirection(.RIGHT);
             }
 
