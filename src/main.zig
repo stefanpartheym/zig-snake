@@ -36,18 +36,23 @@ const SnakeDirection = enum {
 const Snake = struct {
     const Self = @This();
 
+    config: *const Config,
     parts: std.ArrayList(Entity),
     direction: SnakeDirection,
+    next_direction: SnakeDirection,
 
-    pub fn init(allocator: std.mem.Allocator) !Self {
+    pub fn init(allocator: std.mem.Allocator, config: *const Config) !Self {
         var self = Self{
+            .config = config,
             .parts = std.ArrayList(Entity).init(allocator),
-            .direction = .RIGHT,
+            .direction = .DOWN,
+            .next_direction = .DOWN,
         };
 
-        try self.parts.append(Entity{ .x = 1, .y = 0 });
-        try self.parts.append(Entity{ .x = 0, .y = 0 });
-        self.direction = .RIGHT;
+        const random_x = std.crypto.random.intRangeAtMost(i32, 2, @as(i32, @intCast(self.config.map.cols)) - 2);
+        const random_y = std.crypto.random.intRangeAtMost(i32, 2, @as(i32, @intCast(self.config.map.rows)) - 2);
+        try self.parts.append(Entity{ .x = random_x, .y = random_y });
+        try self.parts.append(Entity{ .x = random_x, .y = random_y - 1 });
 
         return self;
     }
@@ -67,7 +72,7 @@ const Snake = struct {
 
         // Make sure, snake cannot move into opposite direction.
         if (direction != opposite) {
-            self.direction = direction;
+            self.next_direction = direction;
         }
     }
 
@@ -81,7 +86,7 @@ const Snake = struct {
 
         // TODO: Handle cases when snake would move out of the map's
         // boundaries and make it enter on the opposite side.
-        switch (self.direction) {
+        switch (self.next_direction) {
             .UP => target.y -= 1,
             .DOWN => target.y += 1,
             .LEFT => target.x -= 1,
@@ -97,6 +102,8 @@ const Snake = struct {
             part.y = target.y;
             target = next;
         }
+
+        self.direction = self.next_direction;
 
         // NOTE:
         // Return original position of the tail in order to be able to
@@ -172,7 +179,7 @@ const Game = struct {
             .running = true,
             .playing = false,
             .map = try Map.init(allocator, config),
-            .snake = try Snake.init(allocator),
+            .snake = try Snake.init(allocator, config),
             .food = undefined,
         };
 
@@ -233,7 +240,7 @@ const Config = struct {
 };
 
 pub fn main() !void {
-    const config = Config.init(800, 600, true, 0.2);
+    const config = Config.init(800, 600, true, 0.3);
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var game = try Game.init(gpa.allocator(), &config);
     defer game.deinit();
@@ -273,7 +280,8 @@ pub fn main() !void {
                 game.snake.setDirection(.RIGHT);
             }
 
-            if (tick >= config.tick_time) {
+            const tick_time = config.tick_time - (0.01 * @as(f32, @floatFromInt(game.snake.parts.items.len)));
+            if (tick >= @max(0.05, tick_time)) {
                 const previous_tail = game.snake.move();
                 if (game.snake.getHead().isPosition(&game.food)) {
                     try game.snake.grow(previous_tail);
@@ -301,12 +309,13 @@ pub fn main() !void {
         }
 
         // Snake
-        for (game.snake.parts.items) |snake_part| {
+        for (game.snake.parts.items, 0..) |snake_part, i| {
+            const color = if (i == 0) rl.Color.green else rl.Color.dark_green;
             renderTile(
                 snake_part.x,
                 snake_part.y,
                 .{ .x = tile_width, .y = tile_height },
-                rl.Color.dark_green,
+                color,
             );
         }
 
